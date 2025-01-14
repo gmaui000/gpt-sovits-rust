@@ -89,7 +89,7 @@ impl Chinese {
         let pattern3 = Regex::new(r"[?<=[!?…,.-]]\s*").unwrap();
         let pattern4 = Regex::new(r"[a-zA-Z]+").unwrap();
 
-        let text_normalizer = TextNormalizer::init();
+        let text_normalizer = TextNormalizer::new("../data/zh_dict.json");
         let tone_modifier = ToneSandhi::init();
         let jieba_util = Jieba::new();
 
@@ -258,7 +258,7 @@ impl Chinese {
     pub fn text_normalize(&self, text: String) -> String {
         // 只是替换符号
         let replaced_text = self.replace_symbol(text);
-        let sentences = self.text_normalizer.normalize(replaced_text);
+        let sentences = self.text_normalizer.normalize(&replaced_text);
         let mut dest_text = "".to_string();
         for sentence in sentences {
             let dt = self.replace_punctuation(sentence);
@@ -280,7 +280,7 @@ fn chinese_test0() {
     let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。".to_string();
 
     let text = num.text_normalize(text);
-    let text = num.text_normalizer.normalize(text);
+    let text = num.text_normalizer.normalize(&text);
 
     for t in text {
         let (phones_list, word2ph) = num.g2p(&t);

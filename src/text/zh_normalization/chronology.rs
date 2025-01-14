@@ -4,10 +4,10 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     // 普通日期 2023年10月25日
-    static ref RE_DATE: Regex = Regex::new(r"(\d{4}|\d{2})年((1[0-2]|0?[1-9])月)?(([12]\d|0?[1-9]|30|31)([日号]))?").unwrap();
+    static ref RE_DATE: Regex = Regex::new(r"(\d{4}|\d{2})年((1[0-2]|0?[1-9])月)?(([12]\d|30|31|0?[1-9])([日号]))?").unwrap();
 
     // 日期后带“日”或“号” 2023-10-25
-    static ref RE_DATE2: Regex = Regex::new(r"(\d{4}|\d{2})[- /.](1[0-2]|0?[1-9])[- /.]([12]\d|0?[1-9]|30|31)([日号])?").unwrap();
+    static ref RE_DATE2: Regex = Regex::new(r"(\d{4}|\d{2})[- /.](1[0-2]|0?[1-9])[- /.]([12]\d|30|31|0?[1-9])([日号])?").unwrap();
 
     // 时间范围，如8:30-12:30
     static ref RE_TIME_RANGE: Regex = Regex::new(r"([01]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?(~|-)([01]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?").unwrap();
@@ -59,12 +59,12 @@ impl Chronology {
                     .map(|m| format!("{}年", self.num.verbalize_digits(m.as_str(), false)));
                 let month = caps
                     .get(3)
-                    .map(|m| format!("{}月", self.num.verbalize_cardinal(m.as_str(), true)));
+                    .map(|m| format!("{}月", self.num.verbalize_cardinal(m.as_str(), false)));
                 let day = caps.get(5).map(|m| {
                     let suffix = caps.get(9).map_or("日", |m| m.as_str());
                     format!(
                         "{}{}",
-                        self.num.verbalize_cardinal(m.as_str(), true),
+                        self.num.verbalize_cardinal(m.as_str(), false),
                         suffix
                     )
                 });
@@ -86,12 +86,12 @@ impl Chronology {
                     .map(|m| format!("{}年", self.num.verbalize_digits(m.as_str(), false)));
                 let month = caps
                     .get(2)
-                    .map(|m| format!("{}月", self.num.verbalize_cardinal(m.as_str(), true)));
+                    .map(|m| format!("{}月", self.num.verbalize_cardinal(m.as_str(), false)));
                 let day = caps.get(3).map(|m| {
                     let suffix = caps.get(4).map_or("日", |m| m.as_str());
                     format!(
                         "{}{}",
-                        self.num.verbalize_cardinal(m.as_str(), true),
+                        self.num.verbalize_cardinal(m.as_str(), false),
                         suffix
                     )
                 });
@@ -268,6 +268,10 @@ mod tests {
         let replaced_date = chronology.replace_date2(input);
         let replaced_time = chronology.replace_time(&replaced_date);
         assert_eq!(replaced_time, expected);
+        assert_eq!(chronology.normalize(input), expected);
+
+        let input = "日期：2025/01/14~2025/12/31。";
+        let expected = "日期：二零二五年一月十四日~二零二五年十二月三十一日。";
         assert_eq!(chronology.normalize(input), expected);
     }
 }
