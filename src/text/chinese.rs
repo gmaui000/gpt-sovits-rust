@@ -4,287 +4,362 @@ use super::tone_sandhi::ToneSandhi;
 use super::zh_normalization::opencpop_strict::OPENCPOP_STRICT;
 use super::zh_normalization::text_normalization::TextNormalizer;
 use fancy_regex::{Captures, Regex};
-use jieba_rs::{Jieba, Tag};
+use jieba_rs::Jieba;
+use lazy_static::lazy_static;
 use log::info;
 use std::collections::HashMap;
-use std::fs;
-use std::iter::zip;
-use std::ops::Add;
 
-pub struct Chinese {
-    pub rep_map: HashMap<String, String>,
-    pub pinyin_to_symbol_map: HashMap<String, String>,
-    pub v_rep_map: HashMap<String, String>,
-    pub pinyin_rep_map: HashMap<String, String>,
-    pub single_rep_map: HashMap<String, String>,
-    pub pattern: Regex,
-    pub pattern2: Regex,
-    pub pattern3: Regex,
-    pub pattern4: Regex,
-    pub punctuation: [String; 6],
-    pub text_normalizer: TextNormalizer,
-    pub jieba_util: Jieba,
-    pub tone_modifier: ToneSandhi,
-    pub lazy_pinyin: LazyPinyin,
+lazy_static! {
+    // 常量数据
+    static ref V_REP_MAP: HashMap<&'static str, &'static str> = HashMap::from([
+        ("uei", "ui"),
+        ("iou", "iu"),
+        ("uen", "un"),
+    ]);
+
+    static ref PINYIN_REP_MAP: HashMap<&'static str, &'static str> = HashMap::from([
+        ("ing", "ying"),
+        ("i", "yi"),
+        ("in", "yin"),
+        ("u", "wu"),
+    ]);
+
+    static ref SINGLE_REP_MAP: HashMap<&'static str, &'static str> = HashMap::from([
+        ("v", "yu"),
+        ("e", "e"),
+        ("i", "y"),
+        ("u", "w"),
+    ]);
+
+    static ref PUNCTUATION: [&'static str; 6] = ["!", "?", "…", ",", ".", "-"];
+
+    // 正则表达式
+    static ref ESCAPE_PATTERN: Regex = Regex::new(r"[\\^$.?*+{}[|]()#/]").unwrap();
+    static ref RE_NON_CHINESE_OR_PUNCTUATION: Regex = Regex::new(&format!(
+        r"[^\u4e00-\u9fa5{}]+",
+        PUNCTUATION.join("")
+    )).unwrap();
+    static ref RE_SENTENCE_SPLIT: Regex = Regex::new(r"[?<=[!?…,.-]]\s*").unwrap();
+    static ref RE_ENGLISH_LETTER: Regex = Regex::new(r"[a-zA-Z]+").unwrap();
 }
 
-fn escape_string(input: &str) -> String {
-    let pattern = Regex::new("[\\^$.?*+{}[|]()#/]").unwrap();
-    return pattern.replace_all(input, "\\$0").to_string();
+pub struct Chinese {
+    rep_map: HashMap<String, String>,
+    pinyin_to_symbol_map: HashMap<String, String>,
+    pattern: Regex,
+    text_normalizer: TextNormalizer,
+    jieba_util: Jieba,
+    tone_modifier: ToneSandhi,
+    lazy_pinyin: LazyPinyin,
 }
 
 impl Chinese {
-    pub fn init(rep_map_json_path: &str, phrases_dict_path: &str, pinyin_dict_path: &str) -> Self {
-        let file = fs::File::open(rep_map_json_path).unwrap();
-        let rep_map: HashMap<String, String> = serde_json::from_reader(&file).unwrap();
+    pub fn new(rep_map_json_path: &str, phrases_dict_path: &str, pinyin_dict_path: &str) -> Self {
+        let rep_map: HashMap<String, String> =
+            serde_json::from_reader(std::fs::File::open(rep_map_json_path).unwrap()).unwrap();
 
-        let opencpop_strict = OPENCPOP_STRICT.map(|x| (x.0.to_string(), x.1.to_string()));
-        let pinyin_to_symbol_map = HashMap::from(opencpop_strict);
+        let pinyin_to_symbol_map = OPENCPOP_STRICT
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
 
-        let v_rep_map: HashMap<String, String> = HashMap::from([
-            ("uei".to_string(), "ui".to_string()),
-            ("iou".to_string(), "iu".to_string()),
-            ("uen".to_string(), "un".to_string()),
-        ]);
+        // 生成转义的正则
+        let escaped_keys = rep_map
+            .keys()
+            .map(|key| ESCAPE_PATTERN.replace_all(key, "\\$0").to_string())
+            .collect::<Vec<_>>()
+            .join("|");
+        let pattern = Regex::new(&escaped_keys).unwrap();
 
-        let pinyin_rep_map: HashMap<String, String> = HashMap::from([
-            ("ing".to_string(), "ying".to_string()),
-            ("i".to_string(), "yi".to_string()),
-            ("in".to_string(), "yin".to_string()),
-            ("u".to_string(), "wu".to_string()),
-        ]);
-
-        let single_rep_map: HashMap<String, String> = HashMap::from([
-            ("v".to_string(), "yu".to_string()),
-            ("e".to_string(), "e".to_string()),
-            ("i".to_string(), "y".to_string()),
-            ("u".to_string(), "w".to_string()),
-        ]);
-
-        let mut ps = vec![];
-        for p in rep_map.keys() {
-            let p = escape_string(p);
-            ps.push(p);
-        }
-
-        let ps = ps.join("|");
-        let pattern = Regex::new(&ps).unwrap();
-
-        // 中文和符号
-        let punctuation = [
-            "!".to_string(),
-            "?".to_string(),
-            "…".to_string(),
-            ",".to_string(),
-            ".".to_string(),
-            "-".to_string(),
-        ];
-        let pr = punctuation.join("");
-        let mut pt = r"[^\u4e00-\u9fa5".to_string();
-        pt.push_str(&pr);
-        pt.push_str("]+");
-
-        let pattern2 = Regex::new(&pt).unwrap();
-
-        let pattern3 = Regex::new(r"[?<=[!?…,.-]]\s*").unwrap();
-        let pattern4 = Regex::new(r"[a-zA-Z]+").unwrap();
-
-        let text_normalizer = TextNormalizer::new("../data/zh_dict.json");
-        let tone_modifier = ToneSandhi::init();
-        let jieba_util = Jieba::new();
-
-        let lazy_pinyin = LazyPinyin::init(phrases_dict_path, pinyin_dict_path).unwrap();
-
-        Chinese {
+        Self {
             rep_map,
             pinyin_to_symbol_map,
-            v_rep_map,
-            pinyin_rep_map,
-            single_rep_map,
             pattern,
-            pattern2,
-            pattern3,
-            pattern4,
-            punctuation,
-            text_normalizer,
-            jieba_util,
-            tone_modifier,
-            lazy_pinyin,
+            text_normalizer: TextNormalizer::new("../data/zh_dict.json"),
+            jieba_util: Jieba::new(),
+            tone_modifier: ToneSandhi::init(),
+            lazy_pinyin: LazyPinyin::init(phrases_dict_path, pinyin_dict_path).unwrap(),
         }
+    }
+
+    pub fn text_normalize(&self, text: &str) -> String {
+        let replaced_text = self.replace_symbol(text);
+        self.text_normalizer
+            .normalize(&replaced_text)
+            .into_iter()
+            .map(|sentence| self.replace_punctuation(&sentence))
+            .collect()
     }
 
     /// 符号统一替换为英文输入下的符号
-    pub fn replace_symbol(&self, sentence: String) -> String {
-        let replacement = |caps: &Captures| -> String {
-            let v = &caps[0];
-            let s = self.rep_map.get(v).unwrap().clone();
-            s
-        };
-        let replaced_text = self
-            .pattern
-            .replace_all(&sentence, &replacement)
-            .to_string();
-
-        replaced_text
-    }
-
-    /// 标点符号替换
-    pub fn replace_punctuation(&self, sentence: String) -> String {
-        let text = sentence.replace("嗯", "恩").replace("呣", "母");
-
-        let replaced_text = self.replace_symbol(text);
-        // 移除非中文的
-        let replaced_text = self.pattern2.replace_all(&replaced_text, "").to_string();
-
-        replaced_text
+    pub fn replace_symbol(&self, text: &str) -> String {
+        self.pattern
+            .replace_all(text, |caps: &Captures| {
+                self.rep_map
+                    .get(&caps[0])
+                    .cloned()
+                    .unwrap_or_else(|| caps[0].to_string())
+            })
+            .to_string()
     }
 
     pub fn g2p(&self, text: &str) -> (Vec<String>, Vec<usize>) {
-        let mut sentences = vec![];
-
-        let replacement = |caps: &Captures| -> String {
-            let v = &caps[0];
-            v.to_string().add("\n")
-        };
-        let text2 = self.pattern3.replace_all(text, replacement);
-
-        for i in text2.split("\n") {
-            if i.trim() != "" {
-                sentences.push(i.to_string());
-            }
-        }
+        let sentences: Vec<_> = RE_SENTENCE_SPLIT
+            .replace_all(text, |caps: &Captures| format!("{}\n", &caps[0]))
+            .split('\n')
+            .filter(|line| !line.trim().is_empty())
+            .map(String::from)
+            .collect();
 
         let (phones, word2ph) = self._g2p(&sentences);
 
         (phones, word2ph)
     }
 
-    //
-    fn _get_initials_finals(&self, word: &str) -> (Vec<String>, Vec<String>) {
-        let mut initials: Vec<String> = vec![];
-        let mut finals: Vec<String> = vec![];
-        let orig_initials = self.lazy_pinyin.lazy_pinyin(word, Style::Initials, true);
-        let orig_finals = self
+    fn extract_initials_and_finals(&self, word: &str) -> (Vec<String>, Vec<String>) {
+        let initials = self
             .lazy_pinyin
-            .lazy_pinyin(word, Style::InitialsTone3, true);
-        for (mut c, mut v) in zip(orig_initials, orig_finals) {
-            initials.append(&mut c);
-            finals.append(&mut v)
-        }
+            .lazy_pinyin(word, Style::Initials, true)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(); // Flatten and collect into a Vec<String>
+
+        let finals = self
+            .lazy_pinyin
+            .lazy_pinyin(word, Style::InitialsTone3, true)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>(); // Flatten and collect into a Vec<String>
+
         (initials, finals)
+    }
+
+    /// 标点符号替换
+    fn replace_punctuation(&self, text: &str) -> String {
+        let cleaned_text = text.replace("嗯", "恩").replace("呣", "母");
+        RE_NON_CHINESE_OR_PUNCTUATION
+            .replace_all(&cleaned_text, "")
+            .to_string()
     }
 
     pub fn _g2p(&self, segments: &[String]) -> (Vec<String>, Vec<usize>) {
         let mut phones_list: Vec<String> = vec![];
         let mut word2ph: Vec<usize> = vec![];
 
-        (0..segments.len()).for_each(|i| {
-            let seg = &segments[i];
-            // Replace all English words in the sentence
-            let rp_seg = self.pattern4.replace_all(seg, "").to_string();
+        for seg in segments {
+            // 移除英文字符
+            let rp_seg = RE_ENGLISH_LETTER.replace_all(seg, "").to_string();
 
-            let seg_cut: Vec<Tag> = self.jieba_util.tag(&rp_seg, false);
+            // 分词并处理
+            let seg_cut = self
+                .tone_modifier
+                .pre_merge_for_modify(&self.jieba_util.tag(&rp_seg, false));
 
-            let mut initials: Vec<String> = vec![];
-            let mut finals: Vec<String> = vec![];
-            //
-            let seg_cut = self.tone_modifier.pre_merge_for_modify(&seg_cut);
+            let mut initials = Vec::new();
+            let mut finals = Vec::new();
 
-            for (word, pos) in &seg_cut {
+            for (word, pos) in seg_cut {
                 if pos == "eng" {
                     continue;
                 }
-                let (mut sub_initials, sub_finals) = self._get_initials_finals(word);
-                let mut sub_finals =
+
+                let (mut sub_initials, sub_finals) = self.extract_initials_and_finals(&word);
+                let sub_finals =
                     self.tone_modifier
-                        .modified_tone(word, pos, sub_finals, &self.jieba_util);
+                        .modified_tone(&word, &pos, sub_finals, &self.jieba_util);
+
                 initials.append(&mut sub_initials);
-                finals.append(&mut sub_finals);
+                finals.extend(sub_finals);
             }
-            for (c, v) in zip(initials, finals) {
-                // let raw_pinyin = c.clone() + &v;
-                let mut phone: Vec<String> = vec![];
+
+            for (c, v) in initials.into_iter().zip(finals) {
                 if c == v {
-                    // assert c in punctuation
-                    if !self.punctuation.contains(&c) {
-                        info!("assert c in punctuation is false");
+                    // 符号处理
+                    if !PUNCTUATION.contains(&c.as_str()) {
+                        info!("Unexpected non-punctuation character: {}", c);
                     }
-                    phone = Vec::from([c.clone()]);
+                    phones_list.push(c);
                     word2ph.push(1);
                 } else {
-                    let v_len = v.len();
-                    let v_without_tone = &v[..v_len - 1];
-                    let tone = &v[v_len - 1..];
-                    let mut pinyin = c.clone() + v_without_tone;
-                    // assert tone in "12345";
-                    if !"12345".contains(tone) {
-                        info!("assert tone in 12345 is false");
-                    }
+                    // 拼音处理
+                    let tone = &v[v.len() - 1..];
+                    let mut pinyin = format!("{}{}", c, &v[..v.len() - 1]);
                     if !c.is_empty() {
-                        if self.v_rep_map.contains_key(v_without_tone) {
-                            pinyin = c.clone() + self.v_rep_map.get(v_without_tone).unwrap();
+                        if let Some(new_v) = V_REP_MAP.get(&v[..v.len() - 1]) {
+                            pinyin = format!("{}{}", c, new_v);
                         }
-                    } else if self.pinyin_rep_map.contains_key(&pinyin) {
-                        pinyin = self.pinyin_rep_map.get(&pinyin).unwrap().to_string();
-                    } else if pinyin.chars().count() > 0 {
-                        let pinyin_0 = pinyin.chars().nth(0).unwrap().to_string();
-                        if self.single_rep_map.contains_key(&pinyin_0) {
-                            pinyin = self.single_rep_map.get(&pinyin_0).unwrap().to_string()
-                                + &pinyin[1..];
+                    } else if let Some(new_pinyin) = PINYIN_REP_MAP.get(pinyin.as_str()) {
+                        pinyin = new_pinyin.to_string();
+                    } else if let Some(first_char) = pinyin.chars().next() {
+                        if let Some(new_char) = SINGLE_REP_MAP.get(&first_char.to_string().as_str())
+                        {
+                            pinyin = format!("{}{}", new_char, &pinyin[1..]);
                         }
                     }
 
-                    let new_cv_opt = self.pinyin_to_symbol_map.get(&pinyin);
-                    if new_cv_opt.is_some() {
-                        let new_cv: Vec<&str> = new_cv_opt.unwrap().split(" ").collect();
-                        let new_c = new_cv[0];
-                        let new_v = new_cv[1];
-                        let new_v = new_v.to_string() + tone;
-                        phone = vec![new_c.to_string(), new_v];
-                        word2ph.push(phone.len());
+                    if let Some(new_cv) = self.pinyin_to_symbol_map.get(&pinyin) {
+                        let mut parts: Vec<String> =
+                            new_cv.split_whitespace().map(String::from).collect();
+                        if let Some(last_part) = parts.last_mut() {
+                            *last_part += tone; // 加入声调
+                        }
+                        word2ph.push(parts.len());
+                        phones_list.extend(parts);
                     } else {
-                        info!("assert {} in pinyin_to_symbol_map.keys() error", pinyin)
+                        info!("Pinyin not found in symbol map: {}", pinyin);
                     }
                 }
-
-                phones_list.append(&mut phone);
             }
-        });
+        }
 
         (phones_list, word2ph)
     }
-
-    /// test 1次
-    pub fn text_normalize(&self, text: String) -> String {
-        // 只是替换符号
-        let replaced_text = self.replace_symbol(text);
-        let sentences = self.text_normalizer.normalize(&replaced_text);
-        let mut dest_text = "".to_string();
-        for sentence in sentences {
-            let dt = self.replace_punctuation(sentence);
-            dest_text.push_str(&dt);
-        }
-        dest_text
-    }
 }
 
-#[test]
-fn chinese_test0() {
-    let num = Chinese::init(
-        "../data/rep_map.json",
-        "../data/PHRASES_DICT.json",
-        "../data/PINYIN_DICT.json",
-    );
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    // let text = "上山不一样，下山也不一样，都是受伤了的".to_string();
-    let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。".to_string();
+    #[test]
+    fn test_samples() {
+        let num = Chinese::new(
+            "../data/rep_map.json",
+            "../data/PHRASES_DICT.json",
+            "../data/PINYIN_DICT.json",
+        );
 
-    let text = num.text_normalize(text);
-    let text = num.text_normalizer.normalize(&text);
+        let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。".to_string();
 
-    for t in text {
-        let (phones_list, word2ph) = num.g2p(&t);
-        println!("{:?}", phones_list);
-        println!("{:?}", word2ph);
+        let text = num.text_normalize(&text);
+        let text = num.text_normalizer.normalize(&text);
+
+        let expected_results = vec![
+            (
+                vec![
+                    "m", "ei3", "g", "e5", "r", "en2", "d", "e5", "l", "i2", "x", "iang3", "b",
+                    "u4", "y", "i2", "y", "ang4", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "zh", "a1", "ch", "u1", "l", "ai5", "d", "e5", "f", "eng1", "zh", "eng5", "y",
+                    "E3", "b", "u4", "y", "i2", "y", "ang4", ".", "s", "uo2", "y", "ou3", "d",
+                    "e5", "f", "eng1", "zh", "eng5", "zh", "ong1", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "y", "ao4", "sh", "u4", "x", "iao3", "y", "in1", "y", "ve4", "j", "ia1", "g",
+                    "en1", "z", "i05", "d", "e5", "z", "ui4", "b", "ang4", "l", "e5", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "n", "a4", "sh", "ir4", "y", "i2", "j", "ia4", "sh", "u4", "q", "in2", ".",
+                    "r", "ang4", "t", "a1", "d", "ao4", "t", "ian1", "sh", "ang5", "q", "v4", "h",
+                    "ao2", "h", "ao3", "x", "iang2", "x", "iang3", "b", "a5", "!",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (vec!["h", "a5", ","], vec![2, 1]),
+            (
+                vec![
+                    "f", "eng1", "zh", "eng5", "d", "e5", "h", "ou4", "n", "ao3", "sh", "ao2",
+                    "sh", "ang4", "h", "ai2", "t", "uo1", "zh", "e5", "y", "i4", "t", "iao2", "m",
+                    "a3", "w", "ei3", "b", "a5", "sh", "ir4", "d", "e5", "zh", "ang3", "b", "ian4",
+                    "z", "i05", "!",
+                ],
+                vec![
+                    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1,
+                ],
+            ),
+            (
+                vec!["z", "ai4", "d", "i4", "m", "ian4", "sh", "ang4", ","],
+                vec![2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "w", "o3", "m", "en5", "y", "i4", "b", "ian1", "f", "ang4", "x", "ian4", "y",
+                    "i4", "b", "ian1", "p", "ao3", "zh", "e5", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "sh", "ou3", "l", "i5", "d", "e5", "x", "ian4", "y", "ve4", "f", "ang4", "y",
+                    "ve4", "zh", "ang3", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "f", "eng1", "zh", "eng5", "y", "E3", "d", "ai4", "zh", "e5", "w", "o3", "m",
+                    "en5", "d", "e5", "l", "i2", "x", "iang3", "y", "ve4", "f", "ei1", "y", "ve4",
+                    "y", "van3", ",",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+            (
+                vec![
+                    "y", "ve4", "f", "ei1", "y", "ve4", "g", "ao1", "r", "u2", "g", "uo3", "b",
+                    "a3", "y", "En3", "q", "ian2", "d", "e5", "y", "i4", "ch", "ir2", "h", "e2",
+                    "h", "ua1", "k", "an4", "z", "uo4", "y", "i2", "d", "a4", "f", "u2", "h",
+                    "uo2", "d", "e5", "h", "ua4", ",",
+                ],
+                vec![
+                    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1,
+                ],
+            ),
+            (
+                vec![
+                    "n", "a4", "h", "ua4", "j", "ia1", "d", "e5", "b", "en2", "l", "ing3", "k",
+                    "e3", "zh", "en1", "l", "iao3", "b", "u5", "q", "i3", ".",
+                ],
+                vec![2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+            ),
+        ];
+
+        for (t, (expected_phones, expected_word2ph)) in text.iter().zip(expected_results) {
+            let (phones_list, word2ph) = num.g2p(t);
+            assert_eq!(
+                phones_list, expected_phones,
+                "Mismatch in phones_list for segment: {}",
+                t
+            );
+            assert_eq!(
+                word2ph, expected_word2ph,
+                "Mismatch in word2ph for segment: {}",
+                t
+            );
+        }
+    }
+
+    #[test]
+    fn test_text_normalization() {
+        let chinese = Chinese::new(
+            "../data/rep_map.json",
+            "../data/PHRASES_DICT.json",
+            "../data/PINYIN_DICT.json",
+        );
+        let text = "上山90%不一样，下山1/10也不一样，都是受伤了的";
+        assert_eq!(
+            chinese.text_normalize(text),
+            "上山百分之九十不一样,下山十分之一也不一样,都是受伤了的"
+        );
+    }
+
+    #[test]
+    fn test_g2p() {
+        let chinese = Chinese::new(
+            "../data/rep_map.json",
+            "../data/PHRASES_DICT.json",
+            "../data/PINYIN_DICT.json",
+        );
+        let (phones, word2ph) = chinese.g2p("我喜欢学习");
+        assert_eq!(phones, vec!["x", "i3", "h", "uan5", "x", "ve2", "x", "i2"]);
+        assert_eq!(word2ph, vec![2, 2, 2, 2]);
     }
 }

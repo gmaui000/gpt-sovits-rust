@@ -303,7 +303,7 @@ impl TextUtils {
         let languages = vec![English, Chinese];
         let lang_seg: LangSegment = LangSegment::init(languages);
         let lang_chinese =
-            text::chinese::Chinese::init(rep_map_json_path, phrases_dict_path, pinyin_dict_path);
+            text::chinese::Chinese::new(rep_map_json_path, phrases_dict_path, pinyin_dict_path);
         let lang_english_op = text::english::English::init(eng_dict_json_path, ph_model_path);
         if lang_english_op.is_err() {
             return Err(lang_english_op.err().unwrap());
@@ -338,7 +338,7 @@ impl TextUtils {
         let mut phones: (Vec<String>, Vec<usize>) = (vec![], vec![]);
 
         if language == CHINESE_LANG {
-            norm_text = self.lang_chinese.text_normalize(text);
+            norm_text = self.lang_chinese.text_normalize(&text);
             phones = self.lang_chinese.g2p(&norm_text);
         }
 
@@ -379,7 +379,7 @@ impl TextUtils {
 
         if language == CHINESE_LANG {
             println!("text:{}, len:{}", text, text.trim().chars().count());
-            norm_text = self.lang_chinese.text_normalize(text);
+            norm_text = self.lang_chinese.text_normalize(&text);
             println!(
                 "norm_text:{}, len:{}",
                 norm_text,
@@ -390,7 +390,7 @@ impl TextUtils {
         } else if language == ENGLISH_LANG {
             // 英文中可能多余符号
             text = self.lang_english.text_normalize(text);
-            norm_text = self.lang_chinese.replace_symbol(text);
+            norm_text = self.lang_chinese.replace_symbol(&text);
             phones = self.lang_english.g2p(&norm_text);
         } else if language == JAPANESE_LANG {
             // todo
