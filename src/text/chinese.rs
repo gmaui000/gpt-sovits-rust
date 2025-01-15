@@ -77,7 +77,7 @@ impl Chinese {
             pattern,
             text_normalizer: TextNormalizer::new("../data/zh_dict.json"),
             jieba_util: Jieba::new(),
-            tone_modifier: ToneSandhi::init(),
+            tone_modifier: ToneSandhi::new(),
             lazy_pinyin: LazyPinyin::init(phrases_dict_path, pinyin_dict_path).unwrap(),
         }
     }
