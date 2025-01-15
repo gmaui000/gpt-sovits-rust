@@ -304,7 +304,7 @@ impl TextUtils {
         let lang_seg: LangSegment = LangSegment::init(languages);
         let lang_chinese =
             text::chinese::Chinese::new(rep_map_json_path, phrases_dict_path, pinyin_dict_path);
-        let lang_english_op = text::english::English::init(eng_dict_json_path, ph_model_path);
+        let lang_english_op = text::english::English::new(eng_dict_json_path, ph_model_path);
         if lang_english_op.is_err() {
             return Err(lang_english_op.err().unwrap());
         }
@@ -389,7 +389,7 @@ impl TextUtils {
             (phones, word2ph) = self.lang_chinese.g2p(&norm_text);
         } else if language == ENGLISH_LANG {
             // 英文中可能多余符号
-            text = self.lang_english.text_normalize(text);
+            text = self.lang_english.text_normalize(&text);
             norm_text = self.lang_chinese.replace_symbol(&text);
             phones = self.lang_english.g2p(&norm_text);
         } else if language == JAPANESE_LANG {
@@ -420,8 +420,8 @@ impl TextUtils {
         let mut lang_list: Vec<String> = vec![];
         let mut word2ph_list: Vec<Vec<usize>> = vec![];
         let mut norm_text_list: Vec<String> = vec![];
-        (0..seg_texts.len()).for_each(|i| {
-            let (lang, text) = &seg_texts[i];
+        for seg in seg_texts {
+            let (lang, text) = &seg;
 
             let seg_texts2 = self.lang_seg.lang_seg_texts2(text, lang);
             for (ei, (lang2, text2)) in seg_texts2.iter().enumerate() {
@@ -463,7 +463,7 @@ impl TextUtils {
                     norm_text_list.push(norm_text);
                 }
             }
-        });
+        }
 
         CleanedText {
             phones_list,

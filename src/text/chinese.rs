@@ -142,7 +142,7 @@ impl Chinese {
             .to_string()
     }
 
-    pub fn _g2p(&self, segments: &[String]) -> (Vec<String>, Vec<usize>) {
+    fn _g2p(&self, segments: &[String]) -> (Vec<String>, Vec<usize>) {
         let mut phones_list: Vec<String> = vec![];
         let mut word2ph: Vec<usize> = vec![];
 
@@ -359,7 +359,10 @@ mod tests {
             "../data/PINYIN_DICT.json",
         );
         let (phones, word2ph) = chinese.g2p("我喜欢学习");
-        assert_eq!(phones, vec!["x", "i3", "h", "uan5", "x", "ve2", "x", "i2"]);
-        assert_eq!(word2ph, vec![2, 2, 2, 2]);
+        assert_eq!(
+            phones,
+            vec!["w", "o3", "x", "i3", "h", "uan5", "x", "ve2", "x", "i2"]
+        );
+        assert_eq!(word2ph, vec![2, 2, 2, 2, 2]);
     }
 }

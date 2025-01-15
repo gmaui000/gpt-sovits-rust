@@ -465,7 +465,8 @@ pub fn infer() {
     let wav32k_arr: Array2<f32> = wav32k_arr.insert_axis(Axis(0));
     println!("wav16k_arr:{:?} ", wav16k_arr.shape());
 
-    let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。".to_string();
+    // let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。";
+    let text = "Hello! Today is January 15th, 2025, and the time is 3:45 PM. The temperature is 22.5℃, and it feels like 20℃. You owe me $12.34, or £9.99, which you can pay by 6:00 AM tomorrow. Can you read this email address: test@example.com? What about this URL: https://www.openai.com? Finally, here's a math equation: 3.14 × 2 = 6.28, and a phone number: (123) 456-7890.";
 
     let text_util = TextUtils::init(
         "../data/eng_dict.json",
@@ -478,7 +479,7 @@ pub fn infer() {
 
     let texts = text_util
         .lang_seg
-        .cut_texts(&text, prompt_text.chars().count());
+        .cut_texts(text, prompt_text.chars().count());
 
     println!("texts:{}", texts.join("\n"));
 
