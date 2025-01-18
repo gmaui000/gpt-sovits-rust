@@ -1,0 +1,118 @@
+2025-01-18 16:01:07.918345  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 16:01:07.918820  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 16:01:07.
+2025-01-18 16:01:07.919021  INFO ThreadId(01) actix_server::builder: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/builder.rs:272: starting 16 workers
+2025-01-18 16:01:07.919039  INFO ThreadId(01) actix_server::server: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/server.rs:191: Actix runtime found; starting in Actix runtime
+2025-01-18 16:01:07.919058  INFO ThreadId(01) actix_server::server: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/server.rs:197: starting service: "actix-web-service-0.0.0.0:40004", workers: 16, listening on: 0.0.0.0:40004
+2025-01-18 16:03:58.700308  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 16:03:58.700476  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 16:03:58.
+2025-01-18 16:03:58.700618  INFO ThreadId(01) actix_server::builder: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/builder.rs:272: starting 16 workers
+2025-01-18 16:03:58.700626  INFO ThreadId(01) actix_server::server: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/server.rs:191: Actix runtime found; starting in Actix runtime
+2025-01-18 16:03:58.700634  INFO ThreadId(01) actix_server::server: /home/caobing/.cargo/registry/src/mirrors.ustc.edu.cn-12df342d903acd47/actix-server-2.5.0/src/server.rs:197: starting service: "actix-web-service-0.0.0.0:40004", workers: 16, listening on: 0.0.0.0:40004
+2025-01-18 17:05:01.700851  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:01.701236  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:01.
+2025-01-18 17:05:02.365499  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:02.365672  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:02.
+2025-01-18 17:05:03.048301  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:03.048473  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:03.
+2025-01-18 17:05:03.755611  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:03.755782  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:03.
+2025-01-18 17:05:04.869556  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:04.869730  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:04.
+2025-01-18 17:05:06.795089  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:06.795256  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:06.
+2025-01-18 17:05:10.320279  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:10.320470  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:10.
+2025-01-18 17:05:17.114779  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:17.114956  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:17.
+2025-01-18 17:05:30.525556  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:30.525724  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:30.
+2025-01-18 17:05:56.611380  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:05:56.611557  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:05:56.
+2025-01-18 17:06:48.140805  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:06:48.140994  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:06:48.
+2025-01-18 17:07:48.452873  INFO ThreadId(01) tts_server: tts_server/src/main.rs:22: tts_server start with config: AppConfigItem {
+    log_path: Some(
+        "./logs",
+    ),
+    ip: "0.0.0.0",
+    port: 40004,
+}
+2025-01-18 17:07:48.453055  INFO ThreadId(01) tts_server::tts::server: tts_server/src/tts/server.rs:23: tts_server start at 01/18/2025 17:07:48.

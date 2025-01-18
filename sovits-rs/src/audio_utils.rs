@@ -75,6 +75,7 @@ impl AudioUtils {
         Ok(resampled_data)
     }
 
+    #[allow(dead_code)]
     /// Save the PCM data to a new WAV file
     pub fn decode_data_to_path(
         audio_data: &[i16],

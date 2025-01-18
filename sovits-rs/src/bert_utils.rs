@@ -4,7 +4,6 @@ use ndarray::{s, Array1, Array2, Array3, Array4, Axis};
 use ort::{inputs, session::Session};
 use std::cmp::Ordering;
 use std::f32::consts::PI;
-use std::path::Path;
 use std::time::Instant;
 use tokenizers::Tokenizer;
 
@@ -54,7 +53,14 @@ pub struct BertFeatures {
 }
 
 pub struct ChBertUtils {
-    pub tokenizer: Tokenizer,
+    tokenizer: Tokenizer,
+    ref_words: String,
+    text_util: TextUtils,
+    model_sessions: ModelSessions,
+    wav16k_arr: Array2<f32>,
+    wav32k_arr: Array2<f32>,
+    features: Array2<f32>,
+    phones_list_unpack: Vec<usize>,
 }
 pub fn hanning(m: i64) -> Array1<f32> {
     match m.cmp(&1) {
@@ -72,10 +78,74 @@ pub fn hanning(m: i64) -> Array1<f32> {
     }
 }
 
+impl Default for ChBertUtils {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChBertUtils {
-    pub fn new(tokenizer_json_path: &str) -> Self {
+    pub fn new() -> Self {
+        let tokenizer = Tokenizer::from_file("../assets/tokenizer.json").unwrap();
+
+        let ref_wav_path = "../assets/tts_16_3.wav".to_string();
+        let sampling_rate: i32 = 32000;
+        let zero_sampling_len = (sampling_rate as f32 * 0.3) as usize;
+        let zero_wav: Array1<f32> = Array1::zeros((zero_sampling_len,));
+
+        let text_util = TextUtils::new(
+            "../assets/eng_dict.json",
+            "../assets/rep_map.json",
+            "../assets/model.npz",
+            "../assets/PHRASES_DICT.json",
+            "../assets/PINYIN_DICT.json",
+        )
+        .expect("Failed to create text_util");
+        let ref_words = "今天天气不错，我准备去打篮球。I am going to play basketball today. 我的房间号是 404，希望一切顺利。".to_string();
+        let wav16k: Vec<i16> = AudioUtils::decode_path_to_data(&ref_wav_path, 16000).unwrap();
+        let wav32k: Vec<i16> = AudioUtils::decode_path_to_data(&ref_wav_path, 32000).unwrap();
+        let wav16k: Vec<f32> = wav16k.iter().map(|&x| x as f32 / 32768.0).collect();
+        let wav32k: Vec<f32> = wav32k.iter().map(|&x| x as f32 / 32768.0).collect();
+        let wav16k_arr =
+            ndarray::concatenate(Axis(0), &[Array1::from_vec(wav16k).view(), zero_wav.view()])
+                .expect("Failed to concatenate wav16k_arr")
+                .insert_axis(Axis(0));
+        let wav32k_arr = Array1::from_vec(wav32k).insert_axis(Axis(0));
+        let model_sessions = ModelSessions::from_file(
+            "../assets/bert_model.onnx",
+            "../assets/ssl_model.onnx",
+            "../assets/vq_model_latent.onnx",
+            "../assets/t2s_first_stage_decoder.onnx",
+            "../assets/t2s_stage_decoder.onnx",
+            "../assets/vq_model.onnx",
+        );
+        let CleanedText {
+            mut phones_list,
+            word2ph_list,
+            lang_list,
+            norm_text_list,
+        } = text_util.get_cleaned_text_final(&ref_words);
+        let BertFeatures {
+            features,
+            phones_list_unpack,
+            ..
+        } = ChBertUtils::get_bert_features(
+            &tokenizer,
+            &model_sessions.bert_model,
+            &mut phones_list,
+            &word2ph_list,
+            &norm_text_list,
+            &lang_list,
+        );
         Self {
-            tokenizer: Tokenizer::from_file(tokenizer_json_path).unwrap(),
+            tokenizer,
+            ref_words,
+            text_util,
+            model_sessions,
+            wav16k_arr,
+            wav32k_arr,
+            features,
+            phones_list_unpack,
         }
     }
 
@@ -169,367 +239,291 @@ impl ChBertUtils {
             norm_text_str,
         }
     }
-}
 
-fn infer_wav(
-    sessions: &ModelSessions,
-    wav16k_arr: &Array2<f32>,
-    wav32k_arr: &Array2<f32>,
-    bert_features1: &Array2<f32>,
-    bert_features2: &Array2<f32>,
-    phones_list_unpack1: &[usize],
-    phones_list_unpack2: &[usize],
-) -> Vec<i16> {
-    //float32[batch_sie:1, W:113104]
-    let input_wav16k = inputs![wav16k_arr.clone()].expect("Failed to create input_wav16k input");
-    let ssl_content = sessions
-        .ssl_model
-        .run(input_wav16k)
-        .expect("Failed to run ssl_model");
-    let ssl_content = ssl_content["output"]
-        .try_extract_tensor::<f32>()
-        .expect("Failed to extract ssl_content tensor");
-    let hop_length = 640;
-    let win_length = 2048;
-    let hann_window = hanning(win_length);
+    fn infer_wav(
+        &self,
+        bert_features1: &Array2<f32>,
+        bert_features2: &Array2<f32>,
+        phones_list_unpack1: &[usize],
+        phones_list_unpack2: &[usize],
+    ) -> Vec<i16> {
+        //float32[batch_sie:1, W:113104]
+        let input_wav16k =
+            inputs![self.wav16k_arr.clone()].expect("Failed to create input_wav16k input");
+        let ssl_content = self
+            .model_sessions
+            .ssl_model
+            .run(input_wav16k)
+            .expect("Failed to run ssl_model");
+        let ssl_content = ssl_content["output"]
+            .try_extract_tensor::<f32>()
+            .expect("Failed to extract ssl_content tensor");
+        let hop_length = 640;
+        let win_length = 2048;
+        let hann_window = hanning(win_length);
 
-    // float32[batch_size:1, 768, H:383]
-    let ssl_content: Array3<f32> = ssl_content.view().slice(s![.., .., ..]).to_owned();
+        // float32[batch_size:1, 768, H:383]
+        let ssl_content: Array3<f32> = ssl_content.view().slice(s![.., .., ..]).to_owned();
 
-    let input_ssl_content = inputs![ssl_content].expect("Failed to create input_ssl_content input");
-    let codes = sessions
-        .vq_model_latent
-        .run(input_ssl_content)
-        .expect("Failed to run vq_model_latent");
-    let codes = codes["output"]
-        .try_extract_tensor::<i64>()
-        .expect("Failed to extract codes tensor");
-    //[1, 191]
-    let prompt: Array2<i64> = codes.view().slice(s![0, .., ..]).to_owned();
+        let input_ssl_content =
+            inputs![ssl_content].expect("Failed to create input_ssl_content input");
+        let codes = self
+            .model_sessions
+            .vq_model_latent
+            .run(input_ssl_content)
+            .expect("Failed to run vq_model_latent");
+        let codes = codes["output"]
+            .try_extract_tensor::<i64>()
+            .expect("Failed to extract codes tensor");
+        //[1, 191]
+        let prompt: Array2<i64> = codes.view().slice(s![0, .., ..]).to_owned();
 
-    let top_k: Array1<i64> = ndarray::Array1::from(vec![20]);
-    let temperature: Array1<f32> = ndarray::Array1::from(vec![0.8]);
-    //  合并参考的声音
-    let bert: Array3<f32> =
-        ndarray::concatenate(Axis(1), &[bert_features1.view(), bert_features2.view()])
-            .expect("Failed to concatenate bert features")
-            .insert_axis(Axis(0));
+        let top_k: Array1<i64> = ndarray::Array1::from(vec![20]);
+        let temperature: Array1<f32> = ndarray::Array1::from(vec![0.8]);
+        //  合并参考的声音
+        let bert: Array3<f32> =
+            ndarray::concatenate(Axis(1), &[bert_features1.view(), bert_features2.view()])
+                .expect("Failed to concatenate bert features")
+                .insert_axis(Axis(0));
 
-    // 会清空
-    let all_phoneme_ids = Array1::from_vec({
-        let mut combined = phones_list_unpack1.to_owned();
-        combined.extend_from_slice(phones_list_unpack2);
-        combined
-    })
-    .insert_axis(Axis(0))
-    .mapv(|x| x as i64);
-
-    let text = Array1::from_vec(phones_list_unpack2.to_owned())
+        // 会清空
+        let all_phoneme_ids = Array1::from_vec({
+            let mut combined = phones_list_unpack1.to_owned();
+            combined.extend_from_slice(phones_list_unpack2);
+            combined
+        })
         .insert_axis(Axis(0))
         .mapv(|x| x as i64);
 
-    let x_example: Array2<f32> =
-        Array2::zeros((all_phoneme_ids.shape()[0], all_phoneme_ids.shape()[1]));
+        let text = Array1::from_vec(phones_list_unpack2.to_owned())
+            .insert_axis(Axis(0))
+            .mapv(|x| x as i64);
 
-    let start_loop = Instant::now();
-    let first_stage_decoder_input = inputs![
-        "all_phoneme_ids" => all_phoneme_ids.view(),
-        "bert" => bert.view(),
-        "prompt" => prompt.view(),
-        "top_k" => top_k.view(),
-        "temperature" => temperature.view(),
-    ]
-    .expect("Failed to create first_stage_decoder_input");
-    let start_loop1 = Instant::now();
-    let t2s_first_stage_out = sessions
-        .t2s_first_stage_decoder
-        .run(first_stage_decoder_input)
-        .expect("Failed to run t2s_first_stage_decoder");
-    println!(
-        "t2s_first_stage time: {}ms",
-        start_loop1.elapsed().as_millis()
-    );
+        let x_example: Array2<f32> =
+            Array2::zeros((all_phoneme_ids.shape()[0], all_phoneme_ids.shape()[1]));
 
-    let mut y: Array2<i64> = t2s_first_stage_out["y"]
-        .try_extract_tensor::<i64>()
-        .unwrap()
-        .view()
-        .slice(s![.., ..])
-        .into_owned();
-    let mut k: Array4<f32> = t2s_first_stage_out["k"]
-        .try_extract_tensor::<f32>()
-        .unwrap()
-        .view()
-        .slice(s![.., .., .., ..])
-        .into_owned();
-    let mut v: Array4<f32> = t2s_first_stage_out["v"]
-        .try_extract_tensor::<f32>()
-        .unwrap()
-        .view()
-        .slice(s![.., .., .., ..])
-        .into_owned();
-    let mut y_emb: Array3<f32> = t2s_first_stage_out["y_emb"]
-        .try_extract_tensor::<f32>()
-        .unwrap()
-        .view()
-        .slice(s![.., .., ..])
-        .into_owned();
-
-    let mut y_example: Array2<f32> = Array2::zeros((1, y_emb.shape()[1]));
-    let y_example_0: Array2<f32> = Array2::zeros((1, 1));
-
-    let mut loop_idx = 0;
-    for idx in 1..1500 {
-        y_example = ndarray::concatenate(Axis(1), &[y_example.view(), y_example_0.view()])
-            .expect("Failed to concatenate y_example");
-        let xy_attn_mask: Array4<f32> =
-            ndarray::concatenate(Axis(1), &[x_example.view(), y_example.view()])
-                .unwrap()
-                .insert_axis(Axis(0))
-                .insert_axis(Axis(0));
-
-        let t2s_stage_decoder_input = inputs![
-        "y" => y.view(),
-        "k" => k.view(),
-        "v" => v.view(),
-        "y_emb" => y_emb.view(),
-        "xy_attn_mask" => xy_attn_mask.view(),
-        "top_k" => top_k.view(),
-        "temperature" => temperature.view(),
+        let start_loop = Instant::now();
+        let first_stage_decoder_input = inputs![
+            "all_phoneme_ids" => all_phoneme_ids.view(),
+            "bert" => bert.view(),
+            "prompt" => prompt.view(),
+            "top_k" => top_k.view(),
+            "temperature" => temperature.view(),
         ]
-        .expect("Failed to create t2s_stage_decoder_input");
+        .expect("Failed to create first_stage_decoder_input");
+        let start_loop1 = Instant::now();
+        let t2s_first_stage_out = self
+            .model_sessions
+            .t2s_first_stage_decoder
+            .run(first_stage_decoder_input)
+            .expect("Failed to run t2s_first_stage_decoder");
+        println!(
+            "t2s_first_stage time: {}ms",
+            start_loop1.elapsed().as_millis()
+        );
 
-        let t2s_stage_decoder_out = sessions
-            .t2s_stage_decoder
-            .run(t2s_stage_decoder_input)
-            .expect("Failed to run t2s_stage_decoder");
-
-        k = t2s_stage_decoder_out["o_k"]
-            .try_extract_tensor::<f32>()
-            .unwrap()
-            .view()
-            .slice(s![.., .., .., ..])
-            .into_owned();
-        v = t2s_stage_decoder_out["o_v"]
-            .try_extract_tensor::<f32>()
-            .unwrap()
-            .view()
-            .slice(s![.., .., .., ..])
-            .into_owned();
-        y_emb = t2s_stage_decoder_out["o_y_emb"]
-            .try_extract_tensor::<f32>()
-            .unwrap()
-            .view()
-            .slice(s![.., .., ..])
-            .into_owned();
-        let logits: Array1<i64> = t2s_stage_decoder_out["logits"]
-            .try_extract_tensor::<i64>()
-            .unwrap()
-            .view()
-            .slice(s![..])
-            .into_owned();
-        let samples: Array2<i64> = t2s_stage_decoder_out["samples"]
+        let mut y: Array2<i64> = t2s_first_stage_out["y"]
             .try_extract_tensor::<i64>()
             .unwrap()
             .view()
             .slice(s![.., ..])
             .into_owned();
+        let mut k: Array4<f32> = t2s_first_stage_out["k"]
+            .try_extract_tensor::<f32>()
+            .unwrap()
+            .view()
+            .slice(s![.., .., .., ..])
+            .into_owned();
+        let mut v: Array4<f32> = t2s_first_stage_out["v"]
+            .try_extract_tensor::<f32>()
+            .unwrap()
+            .view()
+            .slice(s![.., .., .., ..])
+            .into_owned();
+        let mut y_emb: Array3<f32> = t2s_first_stage_out["y_emb"]
+            .try_extract_tensor::<f32>()
+            .unwrap()
+            .view()
+            .slice(s![.., .., ..])
+            .into_owned();
 
-        y = ndarray::concatenate(Axis(1), &[y.view(), samples.view()])
-            .expect("Failed to concatenate y");
+        let mut y_example: Array2<f32> = Array2::zeros((1, y_emb.shape()[1]));
+        let y_example_0: Array2<f32> = Array2::zeros((1, 1));
 
-        if *samples.get((0, 0)).expect("Failed to get sample") == 1024
-            || *logits.get(0).expect("Failed to get logit") == 1024
-        {
-            loop_idx = idx;
-            break;
+        let mut loop_idx = 0;
+        for idx in 1..1500 {
+            y_example = ndarray::concatenate(Axis(1), &[y_example.view(), y_example_0.view()])
+                .expect("Failed to concatenate y_example");
+            let xy_attn_mask: Array4<f32> =
+                ndarray::concatenate(Axis(1), &[x_example.view(), y_example.view()])
+                    .unwrap()
+                    .insert_axis(Axis(0))
+                    .insert_axis(Axis(0));
+
+            let t2s_stage_decoder_input = inputs![
+            "y" => y.view(),
+            "k" => k.view(),
+            "v" => v.view(),
+            "y_emb" => y_emb.view(),
+            "xy_attn_mask" => xy_attn_mask.view(),
+            "top_k" => top_k.view(),
+            "temperature" => temperature.view(),
+            ]
+            .expect("Failed to create t2s_stage_decoder_input");
+
+            let t2s_stage_decoder_out = self
+                .model_sessions
+                .t2s_stage_decoder
+                .run(t2s_stage_decoder_input)
+                .expect("Failed to run t2s_stage_decoder");
+
+            k = t2s_stage_decoder_out["o_k"]
+                .try_extract_tensor::<f32>()
+                .unwrap()
+                .view()
+                .slice(s![.., .., .., ..])
+                .into_owned();
+            v = t2s_stage_decoder_out["o_v"]
+                .try_extract_tensor::<f32>()
+                .unwrap()
+                .view()
+                .slice(s![.., .., .., ..])
+                .into_owned();
+            y_emb = t2s_stage_decoder_out["o_y_emb"]
+                .try_extract_tensor::<f32>()
+                .unwrap()
+                .view()
+                .slice(s![.., .., ..])
+                .into_owned();
+            let logits: Array1<i64> = t2s_stage_decoder_out["logits"]
+                .try_extract_tensor::<i64>()
+                .unwrap()
+                .view()
+                .slice(s![..])
+                .into_owned();
+            let samples: Array2<i64> = t2s_stage_decoder_out["samples"]
+                .try_extract_tensor::<i64>()
+                .unwrap()
+                .view()
+                .slice(s![.., ..])
+                .into_owned();
+
+            y = ndarray::concatenate(Axis(1), &[y.view(), samples.view()])
+                .expect("Failed to concatenate y");
+
+            if *samples.get((0, 0)).expect("Failed to get sample") == 1024
+                || *logits.get(0).expect("Failed to get logit") == 1024
+            {
+                loop_idx = idx;
+                break;
+            }
         }
-    }
-    println!(
-        "{}ms , loop_idx:{}",
-        start_loop.elapsed().as_millis(),
-        loop_idx
-    );
+        println!(
+            "{}ms , loop_idx:{}",
+            start_loop.elapsed().as_millis(),
+            loop_idx
+        );
 
-    *y.get_mut((0, y.shape()[1] - 1)).unwrap() = 0;
+        *y.get_mut((0, y.shape()[1] - 1)).unwrap() = 0;
 
-    let pred_semantic: Array3<i64> = y
-        .slice(s![.., y.shape()[1] - loop_idx..])
-        .into_owned()
-        .insert_axis(Axis(0));
-
-    let y_len = (pred_semantic.shape()[2] * 2) as i64;
-    let y_lengths: Array1<i64> = ndarray::Array1::from(vec![y_len]);
-    let text_lengths: Array1<i64> = ndarray::Array1::from(vec![text.shape()[0] as i64]);
-    let t = (wav32k_arr.shape()[1] - hop_length) / hop_length + 1;
-    let refer_mask: Array3<i64> =
-        Array3::ones((pred_semantic.shape()[0], pred_semantic.shape()[1], t));
-
-    let vq_model_input = inputs![
-        "pred_semantic"=>pred_semantic.view(),
-        "text"=>text.view(),
-        "org_audio"=>wav32k_arr.view(),
-        "hann_window"=>hann_window.view(),
-        "refer_mask"=>refer_mask.view(),
-        "y_lengths"=>y_lengths.view(),
-        "text_lengths"=>text_lengths.view(),
-    ]
-    .expect("Failed to create vq_model_input");
-    let start_vq_model = Instant::now();
-    let vq_model_out = sessions
-        .vq_model
-        .run(vq_model_input)
-        .expect("Failed to run vq_model");
-    let start_vq_model2 = Instant::now();
-
-    let audio: Array1<f32> = vq_model_out["audio"]
-        .try_extract_tensor::<f32>()
-        .unwrap()
-        .view()
-        .slice(s![0, 0, ..])
-        .into_owned();
-    println!(
-        "time:{}, audio:{:?}",
-        (start_vq_model2 - start_vq_model).as_millis(),
-        audio.shape()
-    );
-
-    let audio: Vec<f32> = audio.to_vec();
-    let max_audio = audio.iter().map(|&v| v.abs()).fold(0.0, f32::max);
-    let audio_norm = if max_audio > 1.0 {
-        audio
-            .iter()
-            .map(|&x| ((x / max_audio) * 32768.0) as i16)
-            .collect()
-    } else {
-        audio.iter().map(|&x| (x * 32768.0) as i16).collect()
-    };
-    // 保存结果
-    // AudioUtils::decode_data_to_path(&audio_norm, "./make_32k.wav", 32000, true).unwrap();
-    println!("total time: {}ms", start_loop.elapsed().as_millis());
-    audio_norm
-}
-
-pub fn infer(text: &str) -> Vec<i16> {
-    let tokenizer_path = Path::new("../assets/tokenizer.json");
-
-    let ch_bert_util = ChBertUtils::new(tokenizer_path.to_str().unwrap());
-
-    let sampling_rate: i32 = 32000;
-
-    let zero_sampling_len = (sampling_rate as f32 * 0.3) as usize;
-    let zero_wav: Array1<f32> = Array1::zeros((zero_sampling_len,));
-
-    let start = Instant::now();
-
-    // 参考音色音频文件
-    let ref_wav_path = "../assets/tts_16_3.wav";
-    // 参考音色音频对应的文字
-    let prompt_text =
-        "今天天气不错，我准备去打篮球。I am going to play basketball today. 我的房间号是 404，希望一切顺利。".to_string();
-
-    let wav16k: Vec<i16> = AudioUtils::decode_path_to_data(ref_wav_path, 16000).unwrap();
-    let wav32k: Vec<i16> = AudioUtils::decode_path_to_data(ref_wav_path, 32000).unwrap();
-
-    let wav16k: Vec<f32> = wav16k.iter().map(|&x| x as f32 / 32768.0).collect();
-    let wav32k: Vec<f32> = wav32k.iter().map(|&x| x as f32 / 32768.0).collect();
-
-    println!(
-        "time_t:{} ms ,16k len:{}, 32k len:{}",
-        start.elapsed().as_millis(),
-        wav16k.len(),
-        wav32k.len()
-    );
-
-    let wav16k_arr =
-        ndarray::concatenate(Axis(0), &[Array1::from_vec(wav16k).view(), zero_wav.view()])
-            .expect("Failed to concatenate wav16k_arr")
+        let pred_semantic: Array3<i64> = y
+            .slice(s![.., y.shape()[1] - loop_idx..])
+            .into_owned()
             .insert_axis(Axis(0));
-    let wav32k_arr = Array1::from_vec(wav32k).insert_axis(Axis(0));
 
-    // let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。";
-    // let text = "Hello! Today is January 15th, 2025, and the time is 3:45 PM. The temperature is 22.5℃, and it feels like 20℃. You owe me $12.34, or £9.99, which you can pay by 6:00 AM tomorrow. Can you read this email address: test@example.com? What about this URL: https://www.openai.com? Finally, here's a math equation: 3.14 × 2 = 6.28, and a phone number: (123) 456-7890.";
+        let y_len = (pred_semantic.shape()[2] * 2) as i64;
+        let y_lengths: Array1<i64> = ndarray::Array1::from(vec![y_len]);
+        let text_lengths: Array1<i64> = ndarray::Array1::from(vec![text.shape()[0] as i64]);
+        let t = (self.wav32k_arr.shape()[1] - hop_length) / hop_length + 1;
+        let refer_mask: Array3<i64> =
+            Array3::ones((pred_semantic.shape()[0], pred_semantic.shape()[1], t));
 
-    let text_util = TextUtils::new(
-        "../assets/eng_dict.json",
-        "../assets/rep_map.json",
-        "../assets/model.npz",
-        "../assets/PHRASES_DICT.json",
-        "../assets/PINYIN_DICT.json",
-    )
-    .expect("Failed to create text_util");
+        let vq_model_input = inputs![
+            "pred_semantic"=>pred_semantic.view(),
+            "text"=>text.view(),
+            "org_audio"=>self.wav32k_arr.view(),
+            "hann_window"=>hann_window.view(),
+            "refer_mask"=>refer_mask.view(),
+            "y_lengths"=>y_lengths.view(),
+            "text_lengths"=>text_lengths.view(),
+        ]
+        .expect("Failed to create vq_model_input");
+        let start_vq_model = Instant::now();
+        let vq_model_out = self
+            .model_sessions
+            .vq_model
+            .run(vq_model_input)
+            .expect("Failed to run vq_model");
+        let start_vq_model2 = Instant::now();
 
-    let texts = text_util
-        .lang_seg
-        .cut_texts(text, prompt_text.chars().count());
+        let audio: Array1<f32> = vq_model_out["audio"]
+            .try_extract_tensor::<f32>()
+            .unwrap()
+            .view()
+            .slice(s![0, 0, ..])
+            .into_owned();
+        println!(
+            "time:{}, audio:{:?}",
+            (start_vq_model2 - start_vq_model).as_millis(),
+            audio.shape()
+        );
 
-    println!("texts:{}", texts.join("\n"));
+        let audio: Vec<f32> = audio.to_vec();
+        let max_audio = audio.iter().map(|&v| v.abs()).fold(0.0, f32::max);
+        let audio_norm = if max_audio > 1.0 {
+            audio
+                .iter()
+                .map(|&x| ((x / max_audio) * 32768.0) as i16)
+                .collect()
+        } else {
+            audio.iter().map(|&x| (x * 32768.0) as i16).collect()
+        };
+        // 保存结果
+        // AudioUtils::decode_data_to_path(&audio_norm, "./make_32k.wav", 32000, true).unwrap();
+        println!("total time: {}ms", start_loop.elapsed().as_millis());
+        audio_norm
+    }
 
-    let start = Instant::now();
-    let CleanedText {
-        mut phones_list,
-        word2ph_list,
-        lang_list,
-        norm_text_list,
-    } = text_util.get_cleaned_text_final(&prompt_text);
-    println!("time_t2:{} ms", start.elapsed().as_millis());
+    pub fn infer(&self, text: &str) -> Vec<i16> {
+        let texts = self
+            .text_util
+            .lang_seg
+            .cut_texts(text, self.ref_words.chars().count());
 
-    let model_sessons = ModelSessions::from_file(
-        "../assets/bert_model.onnx",
-        "../assets/ssl_model.onnx",
-        "../assets/vq_model_latent.onnx",
-        "../assets/t2s_first_stage_decoder.onnx",
-        "../assets/t2s_stage_decoder.onnx",
-        "../assets/vq_model.onnx",
-    );
+        println!("texts:{}", texts.join("\n"));
 
-    let BertFeatures {
-        features,
-        phones_list_unpack,
-        ..
-    } = ChBertUtils::get_bert_features(
-        &ch_bert_util.tokenizer,
-        &model_sessons.bert_model,
-        &mut phones_list,
-        &word2ph_list,
-        &norm_text_list,
-        &lang_list,
-    );
+        texts
+            .iter()
+            .flat_map(|t| {
+                let CleanedText {
+                    mut phones_list,
+                    word2ph_list,
+                    lang_list,
+                    norm_text_list,
+                } = self.text_util.get_cleaned_text_final(t);
+                let BertFeatures {
+                    features,
+                    phones_list_unpack,
+                    norm_text_str,
+                } = ChBertUtils::get_bert_features(
+                    &self.tokenizer,
+                    &self.model_sessions.bert_model,
+                    &mut phones_list,
+                    &word2ph_list,
+                    &norm_text_list,
+                    &lang_list,
+                );
 
-    texts
-        .iter()
-        .flat_map(|t| {
-            let CleanedText {
-                mut phones_list,
-                word2ph_list,
-                lang_list,
-                norm_text_list,
-            } = text_util.get_cleaned_text_final(t);
-            let BertFeatures {
-                features: _features,
-                phones_list_unpack: _phones_list_unpack,
-                norm_text_str: _norm_text_str,
-            } = ChBertUtils::get_bert_features(
-                &ch_bert_util.tokenizer,
-                &model_sessons.bert_model,
-                &mut phones_list,
-                &word2ph_list,
-                &norm_text_list,
-                &lang_list,
-            );
+                println!("_phones_list_unpack:{:?}", phones_list_unpack);
+                println!("text:{} ->{}", text, norm_text_str);
 
-            // println!("_phones_list_unpack:{:?}", _phones_list_unpack);
-            // println!("text:{} ->{}", text, _norm_text_str);
-
-            infer_wav(
-                &model_sessons,
-                &wav16k_arr,
-                &wav32k_arr,
-                &features,
-                &_features,
-                &phones_list_unpack,
-                &_phones_list_unpack,
-            )
-        })
-        .collect()
+                self.infer_wav(
+                    &self.features,
+                    &features,
+                    &self.phones_list_unpack,
+                    &phones_list_unpack,
+                )
+            })
+            .collect()
+    }
 }

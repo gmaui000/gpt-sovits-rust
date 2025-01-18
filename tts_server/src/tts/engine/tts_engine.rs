@@ -1,15 +1,17 @@
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
-use sovits::bert_utils::infer;
+use sovits::bert_utils::ChBertUtils;
 
 #[derive(Default)]
-pub struct TTSEngine;
+pub struct TTSEngine {
+    engine: ChBertUtils,
+}
 
 impl TTSEngine {
     pub fn synthesis(&self, text: &str) -> Vec<i16> {
         // 32K 16bit 1channel
-        let audio = infer(text);
+        let audio = self.engine.infer(text);
         let params = SincInterpolationParameters {
             sinc_len: 256,
             f_cutoff: 0.95,
@@ -39,7 +41,7 @@ mod tests {
     #[test]
     fn test_synthesis() {
         println!("test_synthesis");
-        let engine = TTSEngine;
+        let engine = TTSEngine::default();
         let wav = engine.synthesis("今天天气不错,有50%的概率会下雨！");
         let mut writer = WavWriter::create(
             "tts.wav",

@@ -26,11 +26,12 @@ WORKDIR /work/
 
 COPY ./assets /work/assets
 COPY ./config /work/config
-COPY ./docker/bin /work
-COPY ./target/release/tts_server /work
+COPY ./demo /work/demo
+COPY ./docker/bin /work/bin
+COPY ./target/release/tts_server /work/bin
 
 #定义环境变量
 ENV PATH=/work:$PATH
 
 EXPOSE 40004
-CMD ["bash", "/work/start.sh"]
+CMD ["bash", "/work/bin/start.sh"]

@@ -1,7 +1,7 @@
 version: '3'
 services:
   tts_server:
-    image: crpi-6ty60rr45g7d9i1q.cn-shanghai.personal.cr.aliyuncs.com/gmaui000/tts_server
+    image: crpi-6ty60rr45g7d9i1q.cn-shanghai.personal.cr.aliyuncs.com/gmaui000/tts_server:20250118
     restart: always
     ports:
       - "40000:40004"
@@ -9,7 +9,7 @@ services:
       - ./logs:/work/logs
     networks:
       tts:
-        ipv4_address: 10.10.1.11
+        ipv4_address: 10.10.0.11
     restart: always
 
 networks:
@@ -19,5 +19,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.10.1.0/16
-          gateway: 10.10.1.1
+        - subnet: 10.10.0.0/16
+          gateway: 10.10.0.1

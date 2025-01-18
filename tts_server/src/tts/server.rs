@@ -23,7 +23,7 @@ pub async fn start(config: &AppConfigItem) -> anyhow::Result<()> {
     info!("tts_server start at {}.", nowtime);
 
     let app_state = web::Data::new(Arc::new(Mutex::new(AppState {
-        engine: TTSEngine,
+        engine: TTSEngine::default(),
         track: QueryTracker::new(nowtime),
     })));
 
