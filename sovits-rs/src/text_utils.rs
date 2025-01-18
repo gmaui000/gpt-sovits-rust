@@ -323,14 +323,7 @@ impl TextUtils {
         let mut word2ph: Vec<usize> = vec![];
 
         if language == CHINESE_LANG {
-            println!("text:{}, len:{}", text, text.trim().chars().count());
             norm_text = self.lang_chinese.text_normalize(&text);
-            println!(
-                "norm_text:{}, len:{}",
-                norm_text,
-                norm_text.trim().chars().count()
-            );
-
             (phones, word2ph) = self.lang_chinese.g2p(&norm_text);
         } else if language == ENGLISH_LANG {
             // 英文中可能多余符号

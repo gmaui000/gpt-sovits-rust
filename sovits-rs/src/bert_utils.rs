@@ -46,7 +46,7 @@ impl ModelSessions {
     // 添加其他方法来操作这些 Session 对象
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BertFeatures {
     pub features: Array2<f32>,
     pub phones_list_unpack: Vec<usize>,
@@ -232,7 +232,6 @@ fn infer_wav(
         Array2::zeros((all_phoneme_ids.shape()[0], all_phoneme_ids.shape()[1]));
 
     let start_loop = Instant::now();
-
     let first_stage_decoder_input = inputs![
         "all_phoneme_ids" => all_phoneme_ids.view(),
         "bert" => bert.view(),
@@ -300,15 +299,10 @@ fn infer_wav(
         ]
         .expect("Failed to create t2s_stage_decoder_input");
 
-        let start_loop_t2s_stage_decoder = Instant::now();
         let t2s_stage_decoder_out = sessions
             .t2s_stage_decoder
             .run(t2s_stage_decoder_input)
             .expect("Failed to run t2s_stage_decoder");
-        println!(
-            "stage_decoder: {}ms",
-            start_loop_t2s_stage_decoder.elapsed().as_millis()
-        );
 
         k = t2s_stage_decoder_out["o_k"]
             .try_extract_tensor::<f32>()
@@ -412,6 +406,7 @@ fn infer_wav(
     };
     // 保存结果
     // AudioUtils::decode_data_to_path(&audio_norm, "./make_32k.wav", 32000, true).unwrap();
+    println!("total time: {}ms", start_loop.elapsed().as_millis());
     audio_norm
 }
 
@@ -424,7 +419,6 @@ pub fn infer(text: &str) -> Vec<i16> {
 
     let zero_sampling_len = (sampling_rate as f32 * 0.3) as usize;
     let zero_wav: Array1<f32> = Array1::zeros((zero_sampling_len,));
-    println!("zero_wav:{:?}", zero_wav.shape());
 
     let start = Instant::now();
 
@@ -452,7 +446,6 @@ pub fn infer(text: &str) -> Vec<i16> {
             .expect("Failed to concatenate wav16k_arr")
             .insert_axis(Axis(0));
     let wav32k_arr = Array1::from_vec(wav32k).insert_axis(Axis(0));
-    println!("wav16k_arr:{:?} ", wav16k_arr.shape());
 
     // let text = "每个人的理想不一样，扎出来的风筝也不一样。所有的风筝中，要数小音乐家根子的最棒了，那是一架竖琴。让她到天上去好好想想吧！哈，风筝的后脑勺上还拖着一条马尾巴似的长辫子！在地面上，我们一边放线一边跑着，手里的线越放越长，风筝也带着我们的理想越飞越远，越飞越高如果把眼前的一池荷花看作一大幅活的画，那画家的本领可真了不起。";
     // let text = "Hello! Today is January 15th, 2025, and the time is 3:45 PM. The temperature is 22.5℃, and it feels like 20℃. You owe me $12.34, or £9.99, which you can pay by 6:00 AM tomorrow. Can you read this email address: test@example.com? What about this URL: https://www.openai.com? Finally, here's a math equation: 3.14 × 2 = 6.28, and a phone number: (123) 456-7890.";
@@ -490,11 +483,10 @@ pub fn infer(text: &str) -> Vec<i16> {
         "../assets/vq_model.onnx",
     );
 
-    let start = Instant::now();
     let BertFeatures {
         features,
         phones_list_unpack,
-        norm_text_str,
+        ..
     } = ChBertUtils::get_bert_features(
         &ch_bert_util.tokenizer,
         &model_sessons.bert_model,
@@ -503,14 +495,6 @@ pub fn infer(text: &str) -> Vec<i16> {
         &norm_text_list,
         &lang_list,
     );
-    println!(
-        "norm_text_str1:{},phones_list_unpack1:{},time_t3:{} ms",
-        norm_text_str,
-        phones_list_unpack.len(),
-        start.elapsed().as_millis()
-    );
-
-    println!("bert_features1.shape:{:?}", features.shape());
 
     texts
         .iter()
@@ -534,8 +518,8 @@ pub fn infer(text: &str) -> Vec<i16> {
                 &lang_list,
             );
 
-            println!("_phones_list_unpack:{:?}", _phones_list_unpack);
-            println!("text:{} ->{}", text, _norm_text_str);
+            // println!("_phones_list_unpack:{:?}", _phones_list_unpack);
+            // println!("text:{} ->{}", text, _norm_text_str);
 
             infer_wav(
                 &model_sessons,
