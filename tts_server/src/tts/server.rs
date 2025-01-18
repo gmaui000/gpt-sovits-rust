@@ -32,7 +32,7 @@ pub async fn start(config: &AppConfigItem) -> anyhow::Result<()> {
             .app_data(app_state.clone())
             .service(tts_handler::api_tts)
             .service(index::index)
-            .service(fs::Files::new("/demo", "demo"))
+            .service(fs::Files::new("/demo", "../demo"))
             .configure(init)
     })
     .bind((config.ip.clone(), config.port))?
