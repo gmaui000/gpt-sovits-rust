@@ -1,6 +1,6 @@
 target/
 Cargo.lock
 .vscode/
-assets/
 *.wav
 logs
+*.onnx
