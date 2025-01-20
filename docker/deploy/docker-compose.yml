@@ -1,12 +1,14 @@
 version: '3'
 services:
   tts_server:
-    image: crpi-6ty60rr45g7d9i1q.cn-shanghai.personal.cr.aliyuncs.com/gmaui000/tts_server:20250118
+    image: crpi-6ty60rr45g7d9i1q.cn-shanghai.personal.cr.aliyuncs.com/gmaui000/tts_server:20250120
     restart: always
     ports:
       - "40000:40004"
     volumes:
       - ./logs:/work/logs
+      - ./refs/ref_wav.json:/work/assets/ref_wav.json
+      - ./refs/taiwan_wwxh.wav:/work/assets/taiwan_wwxh.wav
     networks:
       tts:
         ipv4_address: 10.10.0.11

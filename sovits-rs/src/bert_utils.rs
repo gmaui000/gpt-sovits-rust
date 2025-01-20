@@ -2,11 +2,19 @@ use super::audio_utils::AudioUtils;
 use super::text_utils::{CleanedText, TextUtils, CHINESE_LANG};
 use ndarray::{s, Array1, Array2, Array3, Array4, Axis};
 use ort::{inputs, session::Session};
+use serde::Deserialize;
 use std::cmp::Ordering;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::Read;
 use std::time::Instant;
 use tokenizers::Tokenizer;
 
+#[derive(Deserialize)]
+struct RefWavConfig {
+    ref_wav_path: Option<String>,
+    ref_words: Option<String>,
+}
 struct ModelSessions {
     pub bert_model: Session,
     pub ssl_model: Session,
@@ -88,7 +96,6 @@ impl ChBertUtils {
     pub fn new() -> Self {
         let tokenizer = Tokenizer::from_file("../assets/tokenizer.json").unwrap();
 
-        let ref_wav_path = "../assets/tts_16_3.wav".to_string();
         let sampling_rate: i32 = 32000;
         let zero_sampling_len = (sampling_rate as f32 * 0.3) as usize;
         let zero_wav: Array1<f32> = Array1::zeros((zero_sampling_len,));
@@ -101,7 +108,22 @@ impl ChBertUtils {
             "../assets/PINYIN_DICT.json",
         )
         .expect("Failed to create text_util");
-        let ref_words = "今天天气不错，我准备去打篮球。I am going to play basketball today. 我的房间号是 404，希望一切顺利。".to_string();
+
+        let mut file = File::open("../assets/ref_wav.json").expect("Failed to open ref_wav.json");
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)
+            .expect("Failed to read ref_wav.json");
+        let config: RefWavConfig =
+            serde_json::from_str(&contents).expect("Failed to parse ref_wav.json");
+
+        let ref_wav_path = format!(
+            "../assets/{}",
+            config
+                .ref_wav_path
+                .unwrap_or("tts_reference.wav".to_string())
+        );
+        let ref_words = config.ref_words.unwrap_or("今天天气不错，我准备去打篮球。I am going to play basketball today. 我的房间号是 404，希望一切顺利。".to_string());
+
         let wav16k: Vec<i16> = AudioUtils::decode_path_to_data(&ref_wav_path, 16000).unwrap();
         let wav32k: Vec<i16> = AudioUtils::decode_path_to_data(&ref_wav_path, 32000).unwrap();
         let wav16k: Vec<f32> = wav16k.iter().map(|&x| x as f32 / 32768.0).collect();

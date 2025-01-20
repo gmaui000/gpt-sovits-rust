@@ -115,14 +115,14 @@ mod tests {
 
     #[test]
     fn test_decode_and_resample() {
-        let input_path = "../assets/tts_16_2.wav";
-        let output_path = "../assets/tts_16_2_out.wav";
+        let input_path = "../assets/test_audio_pcm_s16le_16_1.wav";
+        let output_path = "../assets/test_audio_pcm_s16le_16_1_out.wav";
         let sr_to = 32000;
 
         let pcm_data = AudioUtils::decode_path_to_data(input_path, sr_to).unwrap();
         println!("Decoded PCM data: {} samples", pcm_data.len());
 
-        AudioUtils::decode_data_to_path(&pcm_data, output_path, sr_to, true).unwrap();
+        AudioUtils::decode_data_to_path(&pcm_data, output_path, sr_to, false).unwrap();
         println!("Wrote output file: {}", output_path);
     }
 }
