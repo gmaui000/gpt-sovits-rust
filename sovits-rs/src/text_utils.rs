@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 pub struct LangSegment {
-    pub splits: Vec<String>,
+    pub _splits: Vec<String>,
     pub detector: LanguageDetector,
 }
 
@@ -43,14 +43,14 @@ impl LangSegment {
     pub fn new(languages: Vec<Language>) -> Self {
         let detector: LanguageDetector =
             LanguageDetectorBuilder::from_languages(&languages).build();
-        let splits: Vec<String> = vec![
+        let _splits: Vec<String> = vec![
             "，", "。", "？", "！", ",", ".", "?", "!", "~", ":", "：", "—", "…",
         ]
         .iter()
         .map(|&s| s.to_string())
         .collect();
 
-        LangSegment { splits, detector }
+        LangSegment { _splits, detector }
     }
 
     /// "包含AC到BZ" -> 被识别为中文，需要拆分为 中文（包含）、英文(A C)、中文（到）、英文(B Z)
@@ -132,10 +132,10 @@ impl LangSegment {
         out
     }
 
-    fn split(&self, todo_text: &str) -> Vec<String> {
+    fn _split(&self, todo_text: &str) -> Vec<String> {
         let mut todo_text = todo_text.replace("……", "。").replace("——", "，");
 
-        if !todo_text.ends_with(|c: char| self.splits.contains(&c.to_string())) {
+        if !todo_text.ends_with(|c: char| self._splits.contains(&c.to_string())) {
             todo_text.push('。');
         }
 
@@ -144,7 +144,7 @@ impl LangSegment {
 
         for c in todo_text.chars() {
             current_segment.push(c);
-            if self.splits.contains(&c.to_string()) {
+            if self._splits.contains(&c.to_string()) {
                 result.push(std::mem::take(&mut current_segment));
             }
         }
@@ -152,36 +152,36 @@ impl LangSegment {
         result
     }
 
-    fn cut2(&self, inp: &str, max_num: usize) -> String {
-        let inp = inp.trim_matches('\n');
-        let inps = self.split(inp);
-
+    fn _cut2(&self, inp: &str, max_num: usize) -> String {
+        let inp = inp.trim_matches('\n').to_string();
+        let inps = self._split(&inp);
         if inps.len() < 2 {
-            return inp.to_string();
+            return inp;
         }
 
         let mut opts = Vec::new();
-        let mut current_line = String::new();
-        let mut current_len = 0;
+        let mut summ = 0;
+        let mut tmp_str = String::new();
 
         for segment in inps {
-            let segment_len = segment.chars().count();
-            if current_len + segment_len > max_num {
-                opts.push(std::mem::take(&mut current_line));
-                current_len = 0;
+            summ += segment.chars().count();
+            tmp_str.push_str(&segment);
+
+            if summ > max_num {
+                summ = 0;
+                opts.push(std::mem::take(&mut tmp_str));
             }
-            current_line.push_str(&segment);
-            current_len += segment_len;
         }
 
-        if !current_line.is_empty() {
-            opts.push(current_line);
+        if !tmp_str.is_empty() {
+            opts.push(tmp_str);
         }
 
-        if opts.len() > 1 && opts.last().unwrap().chars().count() < max_num {
-            let last = opts.pop().unwrap();
-            opts.last_mut().unwrap().push_str(&last);
-        }
+        // let opts_len = opts.len();
+        // if opts_len > 1 && opts.last().unwrap().chars().count() < max_num {
+        //     let last = opts.pop().unwrap();
+        //     opts.last_mut().unwrap().push_str(&last);
+        // }
 
         opts.join("\n")
     }
@@ -209,12 +209,13 @@ impl LangSegment {
         let mut buffer = String::new();
 
         for text in texts {
-            if buffer.chars().count() + text.chars().count() >= threshold && !buffer.is_empty() {
-                result.push(std::mem::take(&mut buffer));
-            }
             buffer.push_str(&text);
+            if buffer.chars().count() >= threshold {
+                result.push(std::mem::take(&mut buffer)); // 交换空字符串，避免重新分配
+            }
         }
 
+        // 处理最后的 buffer
         if !buffer.is_empty() {
             if let Some(last) = result.last_mut() {
                 last.push_str(&buffer);
@@ -229,7 +230,7 @@ impl LangSegment {
     /// 切割文本成小断
     pub fn cut_texts(&self, text: &str, max_num: usize) -> Vec<String> {
         let text = self.cut3(text, max_num);
-        let text = self.cut2(&text, max_num);
+        // let text = self.cut2(&text, max_num);
         let texts: Vec<String> = text.split("\n").map(|s| s.to_string()).collect();
 
         self.merge_short_text_in_array(texts, 5)
@@ -684,6 +685,151 @@ mod tests {
             assert_eq!(
                 norm_text_list,
                 [".从", "a", "到", "z", ",从", "A", "到", "Z", "的范围表示."]
+            );
+        });
+    }
+
+    #[test]
+    pub fn chinese_test7() {
+        // let a="a一个";
+        let text_util = create_text_utils();
+
+        let text = "乘客朋友，您好，您现在即将体验和参观的是无人之境项目，无人之境示范体验区是国家智能网联汽车上海试点示范区的重要组成部分，可支撑无人化高级别自动驾驶技术测试验证。目前已实现无人驾驶小巴，robot taxi，无人清扫等多业态无人驾驶应用场景。同时也欢迎您乘坐体验酷哇科技无人驾驶小巴，我们具备完善的功能配置，可完成十余项自动驾驶场景展示。包括路径规划，智能避障，站点停泊，临时起停，自动返场，自主泊车等，360度全景智能交互。在感知，控制，底盘，供电等各个环节，执行冗余式安全策略，切实保障乘客安全，后续将以预约形式逐步开放给社会公众。本车由上海汽车博物馆站，开往一维诶爱智行港终点站，下一站，房车中国上海基地站，车辆离站，请系好安全带。".to_string();
+        let expected_phones = [
+            vec![vec![
+                3, 125, 146, 222, 133, 245, 146, 318, 244, 1, 227, 197, 158, 119, 1, 227, 197, 317,
+                179, 319, 105, 221, 167, 221, 181, 252, 168, 318, 47, 158, 131, 124, 107, 156, 270,
+                127, 134, 251, 214, 316, 256, 248, 141, 320, 211, 221, 204, 317, 184, 225, 258, 1,
+                316, 256, 248, 141, 320, 211, 221, 204, 251, 214, 155, 110, 252, 168, 318, 47, 247,
+                296, 251, 214, 156, 291, 221, 171, 320, 214, 227, 146, 316, 114, 224, 177, 247,
+                169, 125, 130, 251, 115, 158, 104, 251, 214, 127, 178, 251, 214, 155, 110, 247,
+                296, 127, 134, 320, 238, 318, 120, 319, 257, 125, 146, 122, 258, 155, 144, 1, 222,
+                132, 320, 211, 125, 145, 316, 256, 248, 141, 158, 263, 156, 117, 221, 167, 122,
+                192, 319, 164, 127, 238, 221, 174, 251, 213, 221, 169, 251, 258, 124, 133, 251,
+                214, 318, 47, 320, 148,
+            ]],
+            vec![
+                vec![
+                    3, 225, 258, 247, 177, 318, 168, 251, 212, 317, 179, 316, 256, 248, 141, 221,
+                    174, 251, 213, 317, 188, 122, 97, 1,
+                ],
+                vec![3, 74, 68, 24, 8, 80, 80, 10, 61, 75, 57, 1],
+                vec![
+                    3, 316, 256, 248, 141, 247, 201, 250, 119, 127, 147, 127, 290, 318, 31, 252,
+                    105, 316, 256, 248, 141, 221, 174, 251, 213, 318, 204, 318, 238, 125, 113, 221,
+                    203,
+                ],
+            ],
+            vec![vec![
+                3, 252, 236, 251, 212, 318, 30, 158, 270, 318, 202, 227, 197, 125, 146, 319, 293,
+                252, 168, 318, 47, 222, 258, 316, 101, 222, 130, 221, 169, 316, 256, 248, 141, 221,
+                174, 251, 213, 317, 188, 122, 97, 1, 316, 232, 225, 144, 221, 299, 122, 138, 316,
+                108, 251, 110, 127, 134, 156, 235, 227, 146, 245, 138, 320, 214, 1, 222, 132, 316,
+                108, 125, 146, 251, 212, 318, 297, 317, 184, 319, 164, 127, 238, 221, 174, 251,
+                213, 125, 113, 221, 203, 320, 109, 251, 214,
+            ]],
+            vec![vec![
+                3, 122, 117, 222, 293, 224, 258, 221, 204, 156, 280, 158, 263, 1, 320, 214, 227,
+                146, 122, 169, 320, 115, 1, 320, 110, 127, 178, 252, 202, 122, 231, 1, 224, 197,
+                251, 212, 247, 168, 252, 202, 1, 319, 164, 127, 238, 155, 109, 125, 114, 1, 319,
+                164, 320, 257, 122, 231, 125, 130, 127, 147, 1, 250, 107, 122, 104, 224, 219, 251,
+                212, 127, 258, 247, 302, 221, 203, 320, 214, 227, 146, 221, 186, 158, 258,
+            ]],
+            vec![vec![
+                3, 319, 105, 156, 109, 320, 211, 1, 222, 238, 320, 214, 1, 127, 168, 245, 108, 1,
+                156, 235, 127, 179, 127, 147, 156, 133, 156, 134, 158, 271, 221, 192, 1, 320, 212,
+                317, 202, 248, 237, 318, 297, 251, 214, 5, 107, 247, 302, 124, 133, 224, 309, 1,
+                247, 194, 251, 212, 122, 119, 320, 115, 125, 146, 222, 133, 5, 107, 247, 302, 1,
+                158, 243, 317, 299, 221, 181, 318, 168, 318, 299, 318, 306, 317, 202, 251, 214,
+                320, 256, 122, 258, 222, 102, 155, 115, 156, 137, 251, 133, 158, 283, 156, 235,
+                320, 238,
+            ]],
+            vec![vec![
+                3, 122, 142, 125, 130, 318, 241, 251, 115, 158, 104, 247, 169, 125, 130, 122, 231,
+                316, 258, 156, 272, 320, 110, 1, 222, 102, 316, 114, 318, 169, 316, 136, 33, 139,
+                5, 105, 320, 214, 317, 202, 156, 114, 320, 235, 127, 178, 320, 110, 1, 317, 174,
+                318, 167, 320, 110, 1, 155, 113, 125, 130, 320, 235, 156, 291, 251, 115, 158, 104,
+                221, 166, 127, 170, 320, 110, 1, 125, 130, 224, 184, 224, 167, 320, 110, 1, 247,
+                203, 317, 169, 158, 119, 5, 107, 247, 302, 127, 105,
+            ]],
+        ];
+
+        let expected_word2phs = [
+            vec![vec![
+                1, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            ]],
+            vec![
+                vec![1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+                vec![],
+                vec![1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            ],
+            vec![vec![
+                1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2,
+                2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            ]],
+            vec![vec![
+                1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1,
+                2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            ]],
+            vec![vec![
+                1, 2, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            ]],
+            vec![vec![
+                1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2,
+                2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2,
+            ]],
+        ];
+
+        let langs = [
+            vec!["Chinese"],
+            vec!["Chinese", "English", "Chinese"],
+            vec!["Chinese"],
+            vec!["Chinese"],
+            vec!["Chinese"],
+            vec!["Chinese"],
+        ];
+        let norm_texts=  [vec![".乘客朋友,您好,您现在即将体验和参观的是无人之境项目,无人之境示范体验区是国家智能网联汽车上海试点示范区的重要组成部分,可支撑无人化高级别自动驾驶技术测试验证"], 
+                                              vec![".目前已实现无人驾驶小巴,", ". robot taxi,", ".无人清扫等多业态无人驾驶应用场景"],
+                                              vec![".同时也欢迎您乘坐体验酷哇科技无人驾驶小巴,我们具备完善的功能配置,可完成十余项自动驾驶场景展示"],
+                                              vec![".包括路径规划,智能避障,站点停泊,临时起停,自动返场,自主泊车等,三百六十度全景智能交互"],
+                                              vec![".在感知,控制,底盘,供电等各个环节,执行冗余式安全策略,切实保障乘客安全,后续将以预约形式逐步开放给社会公众"],
+                                              vec![".本车由上海汽车博物馆站,开往一维诶爱智行港终点站,下一站,房车中国上海基地站,车辆离站,请系好安全带"]];
+        let max_chars = "乘客朋友，您好，您现在即将体验和参观的是无人之境项目，无人之境示范体验区是国家智能网联汽车上海试点示范区的重要组成部分，可支撑无人化高级别自动驾驶技术测试验证。".chars().count();
+        println!("ref max chars: {:?}", max_chars);
+        let texts = text_util.lang_seg.cut_texts(&text, max_chars);
+        texts.iter().enumerate().for_each(|(index, text)| {
+            println!("{:?}", text);
+            let CleanedText {
+                phones_list,
+                word2ph_list,
+                lang_list,
+                norm_text_list,
+            } = text_util.get_cleaned_text_final(text);
+
+            assert_eq!(
+                phones_list,
+                expected_phones
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| vec![vec![0]])
+            );
+            assert_eq!(
+                word2ph_list,
+                expected_word2phs
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| vec![vec![0]])
+            );
+            assert_eq!(
+                lang_list,
+                langs.get(index).cloned().unwrap_or_else(|| vec![""])
+            );
+            assert_eq!(
+                norm_text_list,
+                norm_texts.get(index).cloned().unwrap_or_else(|| vec![""])
             );
         });
     }

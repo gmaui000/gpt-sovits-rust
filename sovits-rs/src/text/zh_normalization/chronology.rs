@@ -13,7 +13,7 @@ lazy_static! {
     static ref RE_TIME_RANGE: Regex = Regex::new(r"([01]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?(~|-)([01]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?").unwrap();
 
     // 时刻表达式
-    static ref RE_TIME: Regex = Regex::new(r"([0-1]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?").unwrap();
+    static ref RE_TIME: Regex = Regex::new(r"([01]?\d|2[0-3]):([0-5]\d)(:([0-5]\d))?").unwrap();
 
 }
 

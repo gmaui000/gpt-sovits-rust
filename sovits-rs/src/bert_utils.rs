@@ -133,6 +133,13 @@ impl ChBertUtils {
                 .expect("Failed to concatenate wav16k_arr")
                 .insert_axis(Axis(0));
         let wav32k_arr = Array1::from_vec(wav32k).insert_axis(Axis(0));
+        // use cuda
+        // ort::init()
+        //     .with_execution_providers([ort::execution_providers::CUDAExecutionProvider::default()
+        //         .build()
+        //         .error_on_failure()])
+        //     .commit()
+        //     .unwrap();
         let model_sessions = ModelSessions::from_file(
             "../assets/bert_model.onnx",
             "../assets/ssl_model.onnx",
